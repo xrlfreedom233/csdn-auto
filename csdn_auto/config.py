@@ -82,7 +82,7 @@ class Settings:
             prompt_tech_max=int(os.getenv("PROMPT_TECH_MAX", "3")),
             prompt_recent_window=int(os.getenv("PROMPT_RECENT_WINDOW", "30")),
             schedule_interval_hours=float(
-                os.getenv("SCHEDULE_INTERVAL_HOURS", "6")
+                os.getenv("SCHEDULE_INTERVAL_HOURS", "12")
             ),
             schedule_timezone=os.getenv("SCHEDULE_TIMEZONE", "Asia/Shanghai").strip(),
         )

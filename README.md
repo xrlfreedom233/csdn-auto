@@ -1,6 +1,6 @@
 # CSDN AI 自动发文
 
-程序每隔 6 小时调用一个 OpenAI 兼容接口生成 Java 方向的中文 Markdown 技术文章，
+程序每隔 12 小时调用一个 OpenAI 兼容接口生成 Java 方向的中文 Markdown 技术文章，
 每次从代码枚举中随机抽取业务场景和技术组合形成动态提示词，然后调用
 CSDN `saveArticle` 接口发布。每篇 Markdown 原文会保存在 `output/`，
 最近一次发布结果保存在 `.state/last_publish.json`。
@@ -23,7 +23,7 @@ cp .env.example .env
 - `CSDN_X_CA_NONCE`、`CSDN_X_CA_SIGNATURE`：仅供临时联调的抓包值。
 - `PROMPT_TECH_MIN`、`PROMPT_TECH_MAX`：每篇文章随机抽取的技术数量范围。
 - `PROMPT_RECENT_WINDOW`：近期不重复使用的组合数量。
-- `SCHEDULE_INTERVAL_HOURS`：每次成功发布后的间隔小时数，默认 `6`。
+- `SCHEDULE_INTERVAL_HOURS`：每次成功发布后的间隔小时数，默认 `12`，每天最多发布 2 篇。
 
 `.env` 已被 `.gitignore` 忽略，不要把 Cookie、Token 或 API Key 提交到仓库。
 

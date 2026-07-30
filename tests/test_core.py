@@ -35,7 +35,7 @@ def settings() -> Settings:
         prompt_tech_min=2,
         prompt_tech_max=3,
         prompt_recent_window=30,
-        schedule_interval_hours=6,
+        schedule_interval_hours=12,
         schedule_timezone="Asia/Shanghai",
     )
 
@@ -74,11 +74,11 @@ class PromptComposerTests(unittest.TestCase):
 
 
 class SchedulerTests(unittest.TestCase):
-    def test_first_run_is_due_and_then_waits_six_hours(self) -> None:
+    def test_first_run_is_due_and_then_waits_twelve_hours(self) -> None:
         now = datetime(2026, 7, 30, 9, 0, tzinfo=timezone.utc)
-        self.assertTrue(_is_due(now, None, 6))
-        self.assertFalse(_is_due(now + timedelta(hours=5, minutes=59), now, 6))
-        self.assertTrue(_is_due(now + timedelta(hours=6), now, 6))
+        self.assertTrue(_is_due(now, None, 12))
+        self.assertFalse(_is_due(now + timedelta(hours=11, minutes=59), now, 12))
+        self.assertTrue(_is_due(now + timedelta(hours=12), now, 12))
 
     def test_persists_last_success(self) -> None:
         with TemporaryDirectory() as directory:
