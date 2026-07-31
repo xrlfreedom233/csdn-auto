@@ -21,6 +21,7 @@ cp .env.example .env
 - `CSDN_COOKIE`：浏览器开发者工具中发布请求的完整 Cookie。
 - `CSDN_X_CA_SECRET`：用于动态签名的密钥；推荐使用。
 - `CSDN_X_CA_NONCE`、`CSDN_X_CA_SIGNATURE`：仅供临时联调的抓包值。
+- `CSDN_TAGS`：动态技术标签不可用时使用的兜底标签。
 - `PROMPT_TECH_MIN`、`PROMPT_TECH_MAX`：每篇文章随机抽取的技术数量范围。
 - `PROMPT_RECENT_WINDOW`：近期不重复使用的组合数量。
 - `SCHEDULE_INTERVAL_HOURS`：每次成功发布后的间隔小时数，默认 `12`，每天最多发布 2 篇。
@@ -54,6 +55,7 @@ python -m csdn_auto schedule
 业务场景和 Java 技术素材直接定义在 `csdn_auto/prompts.py` 的
 `DEFAULT_SCENES` 与 `DEFAULT_TECHNOLOGIES` 中，需要扩充时直接编辑这两个元组。
 每次生成会随机抽取场景和技术组合。
+发布时会将本篇抽中的技术组合自动设置为 CSDN 标签，不再固定使用 `java`。
 
 AI 成功生成文章后，所用组合会写入 `.state/prompt_history.json`，后续随机抽取
 会避开最近 `PROMPT_RECENT_WINDOW` 个组合。该 JSON 仅保存防重复历史，不保存

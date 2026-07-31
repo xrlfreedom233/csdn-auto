@@ -18,6 +18,7 @@ class GeneratedArticle:
     title: str
     markdown: str
     description: str
+    tags: str = ""
 
 
 class AIClient:
@@ -93,7 +94,10 @@ class AIClient:
             markdown_text = data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, TypeError, AttributeError) as exc:
             raise RuntimeError(f"AI 返回格式不正确：{data}") from exc
-        article = parse_article(markdown_text)
+        article = parse_article(
+            markdown_text,
+            tags=",".join(selection.technologies[:5]),
+        )
         self.prompts.record(selection)
         return article
 
@@ -106,7 +110,7 @@ class AIClient:
             raise RuntimeError(f"AI 请求失败：HTTP {response.status_code}，{body}") from exc
 
 
-def parse_article(markdown_text: str) -> GeneratedArticle:
+def parse_article(markdown_text: str, tags: str = "") -> GeneratedArticle:
     text = re.sub(r"^```(?:markdown|md)?\s*", "", markdown_text.strip(), flags=re.I)
     text = re.sub(r"\s*```$", "", text).strip()
     match = re.match(r"^#\s+(.+?)\s*$", text, flags=re.M)
@@ -120,4 +124,9 @@ def parse_article(markdown_text: str) -> GeneratedArticle:
     clean_text = re.sub(r"[#>*_`\-\[\]()]", " ", body)
     clean_text = re.sub(r"\s+", " ", clean_text).strip()
     description = clean_text[:120].rstrip("，,。；; ") + "。"
-    return GeneratedArticle(title=title[:100], markdown=text, description=description[:200])
+    return GeneratedArticle(
+        title=title[:100],
+        markdown=text,
+        description=description[:200],
+        tags=tags,
+    )

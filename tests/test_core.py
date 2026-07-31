@@ -42,9 +42,13 @@ def settings() -> Settings:
 
 class ParseArticleTests(unittest.TestCase):
     def test_parses_title_and_description(self) -> None:
-        article = parse_article("# Python 定时任务\n\n这是正文内容，用于测试描述生成。")
+        article = parse_article(
+            "# Python 定时任务\n\n这是正文内容，用于测试描述生成。",
+            tags="Python,定时任务",
+        )
         self.assertEqual(article.title, "Python 定时任务")
         self.assertTrue(article.description.startswith("这是正文内容"))
+        self.assertEqual(article.tags, "Python,定时任务")
 
     def test_rejects_missing_title(self) -> None:
         with self.assertRaises(ValueError):
@@ -96,11 +100,20 @@ class CSDNClientTests(unittest.TestCase):
                 title="测试",
                 markdown="# 测试\n\n```python\nprint('ok')\n```",
                 description="描述。",
+                tags="Spring Boot 3,Redis",
             )
         )
         self.assertEqual(payload["markdowncontent"], "# 测试\n\n```python\nprint('ok')\n```")
         self.assertIn("<code", payload["content"])
+        self.assertEqual(payload["tags"], "Spring Boot 3,Redis")
         self.assertEqual(payload["status"], 0)
+
+    def test_payload_uses_configured_tags_as_fallback(self) -> None:
+        client = CSDNClient(settings())
+        payload = client.build_payload(
+            GeneratedArticle(title="测试", markdown="# 测试\n\n正文", description="描述。")
+        )
+        self.assertEqual(payload["tags"], "python")
 
     def test_publish_checks_business_code(self) -> None:
         session = Mock()

@@ -73,7 +73,7 @@ class CSDNClient:
             "description": article.description,
             "content": html,
             "markdowncontent": article.markdown,
-            "tags": self.settings.csdn_tags,
+            "tags": article.tags or self.settings.csdn_tags,
             "categories": self.settings.csdn_category,
             "type": "original",
             "status": 0,
@@ -155,4 +155,3 @@ def make_signature(secret: str, key: str, nonce: str) -> str:
         hashlib.sha256,
     ).digest()
     return base64.b64encode(digest).decode("ascii")
-
