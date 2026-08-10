@@ -6,6 +6,7 @@ import logging
 import sys
 
 from .config import Settings
+from .importer import KnowledgeImporter
 from .scheduler import run_scheduler
 from .service import PublishingService, save_preview, write_result
 
@@ -21,6 +22,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="只生成并保存 Markdown，不调用 CSDN",
     )
     subparsers.add_parser("schedule", help="启动间隔定时任务")
+    knowledge_import = subparsers.add_parser(
+        "import-knowledge", help="清洗网页或本地文档并导入 RAG 知识库"
+    )
+    knowledge_import.add_argument(
+        "sources",
+        nargs="+",
+        help="网页 URL、PDF、DOCX、HTML、Markdown、TXT 文件或目录",
+    )
+    knowledge_import.add_argument(
+        "--output-dir",
+        default="knowledge/imported",
+        help="清洗后 Markdown 的保存目录",
+    )
+    knowledge_import.add_argument(
+        "--timeout", type=int, default=30, help="网页下载超时秒数"
+    )
+    knowledge_import.add_argument(
+        "--max-mb", type=int, default=25, help="单个文档的最大 MB 数"
+    )
     return parser
 
 
@@ -31,6 +51,32 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = build_parser().parse_args(argv)
     try:
+        if args.command == "import-knowledge":
+            importer = KnowledgeImporter(
+                output_directory=args.output_dir,
+                timeout=args.timeout,
+                max_bytes=args.max_mb * 1024 * 1024,
+            )
+            results = importer.import_many(args.sources)
+            print(
+                json.dumps(
+                    {
+                        "imported": len(results),
+                        "documents": [
+                            {
+                                "source": result.source,
+                                "title": result.title,
+                                "characters": result.characters,
+                                "output": str(result.output_path),
+                            }
+                            for result in results
+                        ],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
         settings = Settings.from_env()
         if args.command == "schedule":
             run_scheduler(settings)

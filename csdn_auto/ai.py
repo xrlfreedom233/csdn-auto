@@ -8,7 +8,13 @@ from dataclasses import dataclass
 import requests
 
 from .config import Settings
-from .prompts import BASE_SYSTEM_PROMPT, PromptComposer
+from .prompts import BASE_SYSTEM_PROMPT, PromptComposer, revision_prompt
+from .rag import (
+    LocalKnowledgeBase,
+    OpenAIEmbeddingProvider,
+    PersistentVectorKnowledgeBase,
+    format_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +32,35 @@ class AIClient:
         self.settings = settings
         self.session = session or requests.Session()
         self.prompts = PromptComposer(settings.prompt_history_path)
+        documents = LocalKnowledgeBase(
+            settings.rag_knowledge_dir,
+            chunk_size=settings.rag_chunk_size,
+            chunk_overlap=settings.rag_chunk_overlap,
+        )
+        if settings.rag_enabled and settings.rag_backend == "chroma":
+            embedding_api_key = settings.embedding_api_key or settings.ai_api_key
+            if not embedding_api_key:
+                raise ValueError("启用 Chroma RAG 时必须配置 EMBEDDING_API_KEY")
+            self.knowledge_base = PersistentVectorKnowledgeBase(
+                documents=documents,
+                embedding_provider=OpenAIEmbeddingProvider(
+                    base_url=settings.embedding_base_url,
+                    api_key=embedding_api_key,
+                    model=settings.embedding_model,
+                    timeout=settings.embedding_timeout,
+                    dimensions=settings.embedding_dimensions,
+                    failover_enabled=settings.embedding_failover_enabled,
+                ),
+                persist_directory=settings.rag_vector_path,
+                collection_name=settings.rag_collection,
+                batch_size=settings.rag_embedding_batch_size,
+                query_instruction=settings.embedding_query_instruction,
+                document_instruction=settings.embedding_document_instruction,
+            )
+        elif settings.rag_backend == "lexical" or not settings.rag_enabled:
+            self.knowledge_base = documents
+        else:
+            raise ValueError("RAG_BACKEND 仅支持 chroma 或 lexical")
 
     def generate(self) -> GeneratedArticle:
         selection = self.prompts.choose(
@@ -34,6 +69,21 @@ class AIClient:
             tech_max=self.settings.prompt_tech_max,
             recent_window=self.settings.prompt_recent_window,
         )
+        chunks = (
+            self.knowledge_base.retrieve(
+                selection.retrieval_query,
+                top_k=self.settings.rag_top_k,
+            )
+            if self.settings.rag_enabled
+            else []
+        )
+        if self.settings.rag_backend == "chroma":
+            chunks = [
+                chunk
+                for chunk in chunks
+                if chunk.score >= self.settings.rag_min_score
+            ]
+        rag_context = format_context(chunks)
         url = f"{self.settings.ai_base_url}/chat/completions"
         logger.info(
             "随机选题：场景=%s；技术=%s",
@@ -45,6 +95,46 @@ class AIClient:
             self.settings.ai_model,
             self.settings.ai_timeout,
         )
+        if chunks:
+            logger.info(
+                "RAG(%s) 命中 %s 个片段：%s",
+                self.settings.rag_backend,
+                len(chunks),
+                "、".join(chunk.source for chunk in chunks),
+            )
+        elif self.settings.rag_enabled:
+            logger.info("RAG 未命中参考资料，将不带检索上下文生成")
+        markdown_text = self._request_article(
+            url,
+            selection.user_prompt(rag_context),
+            temperature=0.8,
+        )
+        issues = article_quality_issues(markdown_text, require_citations=bool(chunks))
+        if issues:
+            logger.warning("文章首稿未通过质检，将自动修订一次：%s", "；".join(issues))
+            markdown_text = self._request_article(
+                url,
+                revision_prompt(markdown_text, issues, rag_context),
+                temperature=0.3,
+            )
+            remaining_issues = article_quality_issues(
+                markdown_text, require_citations=bool(chunks)
+            )
+            if remaining_issues:
+                raise RuntimeError(
+                    "文章自动修订后仍未通过发布质检："
+                    + "；".join(remaining_issues)
+                )
+        article = parse_article(
+            markdown_text,
+            tags=",".join(("MCP", *selection.technologies[:4])),
+        )
+        self.prompts.record(selection)
+        return article
+
+    def _request_article(
+        self, url: str, user_prompt: str, temperature: float
+    ) -> str:
         started_at = time.monotonic()
         try:
             response = self.session.post(
@@ -57,12 +147,9 @@ class AIClient:
                     "model": self.settings.ai_model,
                     "messages": [
                         {"role": "system", "content": BASE_SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": selection.user_prompt(),
-                        },
+                        {"role": "user", "content": user_prompt},
                     ],
-                    "temperature": 0.8,
+                    "temperature": temperature,
                 },
                 timeout=(
                     self.settings.ai_connect_timeout,
@@ -94,12 +181,7 @@ class AIClient:
             markdown_text = data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, TypeError, AttributeError) as exc:
             raise RuntimeError(f"AI 返回格式不正确：{data}") from exc
-        article = parse_article(
-            markdown_text,
-            tags=",".join(selection.technologies[:5]),
-        )
-        self.prompts.record(selection)
-        return article
+        return markdown_text
 
     @staticmethod
     def _raise_for_status(response: requests.Response) -> None:
@@ -130,3 +212,35 @@ def parse_article(markdown_text: str, tags: str = "") -> GeneratedArticle:
         description=description[:200],
         tags=tags,
     )
+
+
+def article_quality_issues(
+    markdown_text: str, require_citations: bool = False
+) -> list[str]:
+    """发布前做可确定性检查，把常见的模型幻觉拦在 CSDN 之前。"""
+    text = markdown_text.strip()
+    issues: list[str] = []
+    title_match = re.match(r"^#\s+(.+?)\s*$", text, flags=re.M)
+    title = title_match.group(1).strip() if title_match else ""
+    if not title.startswith(("大厂 MCP 面试实录：", "MCP 高频面试题：", "MCP 模拟面试：")):
+        issues.append("标题未使用约定的 MCP 面试型格式")
+    if "模拟面试" not in text and "面试题复盘" not in text:
+        issues.append("开头未明确声明是模拟面试或面试题复盘")
+    for marker in ("面试官", "候选人", "考察点", "合格回答", "加分项"):
+        if marker not in text:
+            issues.append(f"缺少面试结构：{marker}")
+    visible = re.sub(r"\s+", "", text)
+    # Markdown 符号、代码与链接也会计入字符数，因此只拦截明显失控的长文。
+    if len(visible) > 5000:
+        issues.append(f"全文约 {len(visible)} 字符，明显超出 1800～2600 字的目标")
+    if re.search(r"\d+(?:\.\d+)?\s*(?:%|％)", text):
+        issues.append("包含无法自动核实的百分比")
+    if re.search(r"(?:Java|Python|TypeScript)?\s*MCP\s*SDK\s*[vV]?\d+\.\d+", text):
+        issues.append("包含具体 MCP SDK 版本，容易编造依赖或 API")
+    if re.search(r"(?:knowledge/|imported/|\.state/chroma|[\w-]+-[0-9a-f]{8,}\.md)", text, flags=re.I):
+        issues.append("向访客暴露了知识库内部路径或哈希文件名")
+    if require_citations and not re.search(r"\[资料\d+\]", text):
+        issues.append("使用了 RAG 参考资料，但正文没有 [资料1] 格式的事实引用")
+    if require_citations and not re.search(r"^#{2,4}\s+参考资料\s*$", text, flags=re.M):
+        issues.append("文末缺少规范的“参考资料”小节")
+    return issues
