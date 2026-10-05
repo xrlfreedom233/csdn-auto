@@ -70,9 +70,9 @@ class ParseArticleTests(unittest.TestCase):
             parse_article("没有一级标题")
 
     def test_quality_gate_accepts_interview_article(self) -> None:
-        article = """# 大厂 MCP 面试实录：Tool 安全设计
+        article = """# MCP 面试高频考点：Tool 安全设计
 
-本文采用模拟面试形式。
+这是面试中经常被追问的一道题。
 
 **面试官**：如何设计？
 
@@ -98,9 +98,9 @@ class ParseArticleTests(unittest.TestCase):
         self.assertTrue(any("内部路径" in issue for issue in issues))
 
     def test_quality_gate_requires_citations_when_rag_is_used(self) -> None:
-        article = """# 大厂 MCP 面试实录：Tool 安全设计
+        article = """# 大厂 MCP 面试常考：Tool 安全设计
 
-本文采用模拟面试形式。
+这是面试高频考点。
 
 面试官：如何设计？候选人：需要授权。
 
@@ -142,8 +142,8 @@ class PromptComposerTests(unittest.TestCase):
             self.assertIn("检索到的参考片段", prompt)
             self.assertTrue(selection.retrieval_query)
             self.assertIn("面试官", prompt)
-            self.assertIn("大厂 MCP 面试实录", BASE_SYSTEM_PROMPT)
-            self.assertIn("模拟面试", BASE_SYSTEM_PROMPT)
+            self.assertIn("MCP 面试高频考点", BASE_SYSTEM_PROMPT)
+            self.assertNotIn("模拟面试", BASE_SYSTEM_PROMPT)
 
 
 class LocalKnowledgeBaseTests(unittest.TestCase):

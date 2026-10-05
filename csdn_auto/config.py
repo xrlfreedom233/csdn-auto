@@ -82,6 +82,7 @@ class Settings:
     embedding_failover_enabled: bool = False
     embedding_query_instruction: str = ""
     embedding_document_instruction: str = ""
+    ai_disable_thinking: bool = False
 
     @classmethod
     def from_env(cls, require_ai: bool = True) -> "Settings":
@@ -157,4 +158,5 @@ class Settings:
             embedding_document_instruction=os.getenv(
                 "EMBEDDING_DOCUMENT_INSTRUCTION", ""
             ).strip(),
+            ai_disable_thinking=_boolean("AI_DISABLE_THINKING", False),
         )

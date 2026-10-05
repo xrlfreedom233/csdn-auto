@@ -135,6 +135,16 @@ class AIClient:
     def _request_article(
         self, url: str, user_prompt: str, temperature: float
     ) -> str:
+        payload = {
+            "model": self.settings.ai_model,
+            "messages": [
+                {"role": "system", "content": BASE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": temperature,
+        }
+        if self.settings.ai_disable_thinking:
+            payload["thinking"] = {"type": "disabled"}
         started_at = time.monotonic()
         try:
             response = self.session.post(
@@ -143,14 +153,7 @@ class AIClient:
                     "Authorization": f"Bearer {self.settings.ai_api_key}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "model": self.settings.ai_model,
-                    "messages": [
-                        {"role": "system", "content": BASE_SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "temperature": temperature,
-                },
+                json=payload,
                 timeout=(
                     self.settings.ai_connect_timeout,
                     self.settings.ai_timeout,
@@ -222,17 +225,19 @@ def article_quality_issues(
     issues: list[str] = []
     title_match = re.match(r"^#\s+(.+?)\s*$", text, flags=re.M)
     title = title_match.group(1).strip() if title_match else ""
-    if not title.startswith(("大厂 MCP 面试实录：", "MCP 高频面试题：", "MCP 模拟面试：")):
-        issues.append("标题未使用约定的 MCP 面试型格式")
-    if "模拟面试" not in text and "面试题复盘" not in text:
-        issues.append("开头未明确声明是模拟面试或面试题复盘")
+    if "MCP" not in title:
+        issues.append("标题缺少 MCP 主题关键词")
+    elif not any(hook in title for hook in ("面试", "考点", "追问", "实战", "复盘")):
+        issues.append("标题未体现面试考点或实战属性")
+    if any(bad in title for bad in ("模拟", "必过", "秒杀")):
+        issues.append("标题使用了夸张或不实字眼")
     for marker in ("面试官", "候选人", "考察点", "合格回答", "加分项"):
         if marker not in text:
             issues.append(f"缺少面试结构：{marker}")
     visible = re.sub(r"\s+", "", text)
     # Markdown 符号、代码与链接也会计入字符数，因此只拦截明显失控的长文。
-    if len(visible) > 5000:
-        issues.append(f"全文约 {len(visible)} 字符，明显超出 1800～2600 字的目标")
+    if len(visible) > 8000:
+        issues.append(f"全文约 {len(visible)} 字符，明显超出目标长度")
     if re.search(r"\d+(?:\.\d+)?\s*(?:%|％)", text):
         issues.append("包含无法自动核实的百分比")
     if re.search(r"(?:Java|Python|TypeScript)?\s*MCP\s*SDK\s*[vV]?\d+\.\d+", text):
